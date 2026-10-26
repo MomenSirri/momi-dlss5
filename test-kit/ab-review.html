@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blind A/B Review</title>
+<style>
+/* Layout: a grading-suite review station. Images sit on a neutral grey surround with nothing coloured
+   near them; scoring lives in a quiet side panel; one amber accent marks the current choice.
+   Deliberately single-theme (dark) so every reviewer judges against the same surround. */
+:root {
+  --surround: #262626;
+  --bg: #1a1b1c;
+  --panel: #222325;
+  --panel-2: #2b2d30;
+  --line: #3a3d41;
+  --line-2: #50545a;
+  --text: #e8e9eb;
+  --muted: #a1a5ab;
+  --accent: #e3a43a;
+  --accent-ink: #1a1b1c;
+  --pos: #5fb98f;
+  --neg: #d9836b;
+  --mid: #686d74;
+  --danger: #ef8a7a;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, "SF Mono", monospace;
+  --bar-h: 52px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--font-ui); }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: 1.7rem; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 1.12rem; font-weight: 600; }
+h3 { font-size: 0.95rem; font-weight: 600; }
+p { margin: 0; }
+code, .mono, kbd { font-family: var(--font-mono); font-size: 0.85em; }
+code { background: var(--panel-2); padding: 0.05em 0.35em; border-radius: 3px; overflow-wrap: anywhere; }
+kbd { border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 3px; padding: 0 0.35em; color: var(--muted); font-size: 0.75em; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 0.86rem; }
+
+/* Top bar */
+.bar { height: var(--bar-h); display: flex; align-items: center; gap: 20px; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { display: flex; flex-direction: column; line-height: 1.15; }
+.brand span { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.brand b { font-family: var(--font-display); font-weight: 600; }
+.tabs { display: flex; gap: 2px; }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 14px 12px 12px; color: var(--muted); cursor: pointer; }
+.tab[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab:disabled { opacity: 0.4; cursor: default; }
+.bar .who { margin-left: auto; color: var(--muted); font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .bar { gap: 8px; } .brand span, .bar .who { display: none; } .brand b { white-space: nowrap; } }
+
+/* Buttons */
+.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--line-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.danger { color: var(--danger); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { background: var(--panel-2); border: 0; border-left: 1px solid var(--line); padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"], .opt[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button[aria-pressed="true"] kbd, .opt[aria-pressed="true"] kbd { color: var(--accent-ink); border-color: var(--accent-ink); }
+
+/* Screens */
+main { height: calc(100% - var(--bar-h)); }
+.screen.scroll { height: 100%; overflow: auto; padding: 28px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); }
+.page { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.intro { display: flex; flex-direction: column; gap: 8px; max-width: 68ch; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.step { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.setup-grid { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 900px) { .setup-grid { grid-template-columns: 1fr; } }
+input[type="text"], input[type="number"], textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; color: var(--text); padding: 7px 10px; font: inherit; width: 100%; }
+input[type="number"] { width: 5.5em; }
+textarea { resize: vertical; min-height: 64px; }
+.hint { color: var(--muted); font-size: 0.86rem; }
+.drop { border-style: dashed; border-color: var(--line-2); transition: border-color 0.12s, background 0.12s; }
+.drop.over { border-color: var(--accent); background: var(--panel-2); }
+.drop-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.count { font-size: 0.9rem; }
+.row-between { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-weight: 400; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--panel-2); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.file { font-family: var(--font-mono); font-size: 0.8rem; overflow-wrap: anywhere; }
+.empty-row td { color: var(--muted); text-align: center; padding: 18px; }
+.issues { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; }
+.issue { border-left: 3px solid var(--accent); padding: 4px 10px; background: var(--panel-2); }
+.issue.bad { border-left-color: var(--danger); }
+.start-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.start-row .spacer { flex: 1; }
+.check { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+.fps { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); }
+
+/* Review */
+#review { height: 100%; }
+.review { display: grid; grid-template-columns: minmax(0, 1fr) 350px; height: 100%; }
+.viewer-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.pair-label { display: flex; gap: 10px; align-items: baseline; min-width: 0; margin-right: auto; }
+.pair-label b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer { flex: 1; min-height: 0; display: flex; gap: 2px; background: var(--bg); position: relative; }
+.pane-wrap { position: relative; flex: 1; min-width: 0; min-height: 0; background: var(--surround); }
+.pane { position: absolute; inset: 0; overflow: auto; display: flex; }
+.pane.grab { cursor: grab; }
+.pane.grabbing { cursor: grabbing; }
+.stage { margin: auto; flex: none; position: relative; }
+.stage > img, .stage > video { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-drag: none; }
+.stage > .layer { position: absolute; inset: 0; }
+.stage.px > img, .stage.px > video { image-rendering: pixelated; }
+.stage.wipe { cursor: ew-resize; touch-action: none; }
+.stage.flip { cursor: pointer; }
+.chip { position: absolute; top: 10px; left: 10px; z-index: 2; pointer-events: none; font: 600 0.82rem var(--font-mono); padding: 2px 9px; border-radius: 3px; background: rgba(0, 0, 0, 0.62); color: #f2f2f2; }
+.chip.right { left: auto; right: 10px; }
+.chip.big { font-size: 1.1rem; padding: 4px 12px; }
+.wipe-line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(255, 255, 255, 0.9); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); pointer-events: none; z-index: 1; }
+.wipe-line::after { content: ""; position: absolute; top: 50%; left: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); border: 2px solid rgba(255, 255, 255, 0.9); }
+.viewer-msg { margin: auto; color: var(--muted); padding: 24px; text-align: center; max-width: 60ch; }
+.video-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+.video-bar input[type="range"] { flex: 1; min-width: 80px; accent-color: var(--accent); }
+.warn-line { padding: 6px 12px; font-size: 0.85rem; color: var(--accent); background: var(--panel); border-top: 1px solid var(--line); }
+.score-panel { border-left: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+.q { display: flex; flex-direction: column; gap: 8px; }
+.scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.opt { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 6px 2px; cursor: pointer; font-size: 0.78rem; line-height: 1.25; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.opt:hover { border-color: var(--line-2); }
+.crit { width: 100%; border-collapse: collapse; }
+.crit td { padding: 5px 0; border: 0; vertical-align: middle; }
+.crit td:first-child { padding-right: 8px; }
+.crit .lbl { font-size: 0.88rem; }
+.crit .sub { display: block; color: var(--muted); font-size: 0.74rem; line-height: 1.3; }
+.crit .seg button { padding: 3px 8px; font-size: 0.8rem; }
+.accept { display: grid; grid-template-columns: auto auto; gap: 6px 12px; align-items: center; justify-content: start; }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.keys { color: var(--muted); font-size: 0.76rem; }
+@media (max-width: 960px) {
+  .review { grid-template-columns: 1fr; height: auto; }
+  .viewer { height: 62vh; flex: none; }
+  .score-panel { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .screen#review { height: auto; overflow: auto; }
+  main { height: auto; }
+}
+@media (max-width: 700px) { .viewer[data-mode="side"] { flex-direction: column; } }
+
+/* Results */
+.gate { max-width: 60ch; margin: 40px auto; display: flex; flex-direction: column; gap: 12px; }
+.gate .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.results-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.reviewers { display: flex; flex-wrap: wrap; gap: 8px; }
+.rchip { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-size: 0.86rem; background: var(--panel); }
+.verdict { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.verdict .call { padding: 18px; display: flex; flex-direction: column; gap: 6px; justify-content: center; border-right: 1px solid var(--line); }
+.verdict .call b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 650; line-height: 1.15; }
+.verdict .call.good b { color: var(--pos); }
+.verdict .call.weak b { color: var(--neg); }
+.verdict .facts { padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; background: var(--panel); }
+@media (max-width: 700px) { .verdict { grid-template-columns: 1fr; } .verdict .call { border-right: 0; border-bottom: 1px solid var(--line); } }
+.stack { display: flex; height: 10px; width: 140px; border-radius: 2px; overflow: hidden; background: var(--panel-2); }
+.stack span { display: block; height: 100%; }
+.s-pos { background: var(--pos); }
+.s-mid { background: var(--mid); }
+.s-neg { background: var(--neg); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.pref-pos { color: var(--pos); }
+.pref-neg { color: var(--neg); }
+.section { display: flex; flex-direction: column; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span>DLSS 5 test kit</span><b>Blind A/B review</b></div>
+  <nav class="tabs" aria-label="Screens">
+    <button type="button" class="tab" data-screen="setup" aria-current="page">Setup</button>
+    <button type="button" class="tab" data-screen="review" disabled>Review</button>
+    <button type="button" class="tab" data-screen="results">Results</button>
+  </nav>
+  <div class="who" id="who"></div>
+</header>
+
+<main>
+  <!-- ============================== SETUP -->
+  <section id="setup" class="screen scroll">
+    <div class="page">
+      <div class="intro">
+        <h1>Blind A/B review</h1>
+        <p class="muted">Load the originals and the enhanced results. Each pair is shown as A and B in random order, so you don't know which side was processed until the results are revealed. Files stay on this computer; nothing is uploaded.</p>
+      </div>
+
+      <div class="setup-grid">
+        <div class="card">
+          <label for="reviewer" class="step">1 · Your name</label>
+          <input id="reviewer" type="text" autocomplete="name" placeholder="For example Anna K.">
+          <p class="hint">Labels your results file. Use the same name to resume later.</p>
+        </div>
+        <div class="card drop" id="drop-before">
+          <span class="step">2 · Originals</span>
+          <p>Drop the converter's <code>for-review</code> folder, or original PNG, JPEG or MP4 files.</p>
+          <div class="drop-actions">
+            <button type="button" class="btn" data-pick="before-files">Choose files</button>
+            <button type="button" class="btn" data-pick="before-folder">Choose folder</button>
+            <button type="button" class="link" data-clear="before">Clear</button>
+          </div>
+          <p class="count" id="count-before">No files yet</p>
+          <input type="file" id="before-files" multiple accept="image/*,video/*,.avif" hidden>
+          <input type="file" id="before-folder" webkitdirectory multiple hidden>
+        </div>
+        <div class="card drop" id="drop-after">
+          <span class="step">3 · Enhanced</span>
+          <p>Drop the community tool's results. Export stills as PNG and video as MP4; browsers can't show TIFF.</p>
+          <div class="drop-actions">
+            <button type="button" class="btn" data-pick="after-files">Choose files</button>
+            <button type="button" class="btn" data-pick="after-folder">Choose folder</button>
+            <button type="button" class="link" data-clear="after">Clear</button>
+          </div>
+          <p class="count" id="count-after">No files yet</p>
+          <input type="file" id="after-files" multiple accept="image/*,video/*,.avif" hidden>
+          <input type="file" id="after-folder" webkitdirectory multiple hidden>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row-between"><h2>Pairs</h2><span class="muted small" id="pair-summary"></span></div>
+        <p class="hint">An enhanced file pairs with the original whose name it contains. <code>ext_day_tone0.png</code> pairs with <code>ext_day.png</code> as variant <code>tone0</code>, so several tool settings per shot are fine.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shot</th><th>Variant</th><th>Type</th><th>Original</th><th>Enhanced</th></tr></thead>
+            <tbody id="pair-rows"><tr class="empty-row"><td colspan="5">Add originals and enhanced files to see the pairs.</td></tr></tbody>
+          </table>
+        </div>
+        <div class="issues" id="pair-issues"></div>
+      </div>
+
+      <div class="start-row">
+        <label class="check"><input type="checkbox" id="opt-shuffle" checked> Shuffle the order</label>
+        <label class="fps" for="opt-fps">Frame rate for frame stepping <input type="number" id="opt-fps" value="25" min="1" max="240"></label>
+        <span class="spacer"></span>
+        <button type="button" class="link danger" id="btn-reset" hidden>Start over</button>
+        <button type="button" class="btn primary" id="btn-start" disabled>Start review</button>
+      </div>
+      <p class="muted small" id="start-note">Enter your name and load at least one pair.</p>
+      <p class="small">Collecting results from several artists? <button type="button" class="link" id="btn-combine">Open the results and add their files</button></p>
+    </div>
+  </section>
+
+  <!-- ============================== REVIEW -->
+  <section id="review" class="screen" hidden>
+    <div class="review">
+      <div class="viewer-col">
+        <div class="toolbar">
+          <div class="pair-label"><span class="mono muted" id="pair-pos"></span><b id="pair-shot"></b></div>
+          <div class="seg" role="group" aria-label="View">
+            <button type="button" data-mode="side">Side by side <kbd>S</kbd></button>
+            <button type="button" data-mode="wipe">Wipe <kbd>W</kbd></button>
+            <button type="button" data-mode="flip">Flip <kbd>F</kbd></button>
+          </div>
+          <div class="seg" role="group" aria-label="Zoom">
+            <button type="button" data-zoom="fit">Fit</button>
+            <button type="button" data-zoom="1">1:1</button>
+            <button type="button" data-zoom="2">2:1</button>
+          </div>
+        </div>
+        <div class="viewer" id="viewer"></div>
+        <div class="video-bar" id="video-bar" hidden>
+          <button type="button" class="btn" id="v-play">Play <kbd>K</kbd></button>
+          <button type="button" class="btn" id="v-back" aria-label="Previous frame">&#9664; <kbd>,</kbd></button>
+          <button type="button" class="btn" id="v-fwd" aria-label="Next frame"><kbd>.</kbd> &#9654;</button>
+          <input type="range" id="v-scrub" min="0" max="1000" value="0" step="1" aria-label="Position">
+          <span class="mono muted" id="v-time">0:00.00</span>
+        </div>
+        <p class="warn-line" id="size-warning" hidden></p>
+      </div>
+
+      <aside class="score-panel" aria-label="Scores">
+        <div class="q">
+          <h2>Which is better overall?</h2>
+          <div class="scale" id="overall"></div>
+        </div>
+        <div class="q">
+          <h3>By aspect</h3>
+          <table class="crit"><tbody id="crit"></tbody></table>
+        </div>
+        <div class="q">
+          <h3>Could you deliver it to a client?</h3>
+          <div class="accept" id="accept"></div>
+        </div>
+        <div class="q">
+          <label for="comment"><h3>Comment</h3></label>
+          <textarea id="comment" rows="3" placeholder="What did you notice?"></textarea>
+        </div>
+        <div class="nav">
+          <button type="button" class="btn" id="btn-prev">&larr; Previous</button>
+          <span class="muted small" id="progress"></span>
+          <button type="button" class="btn primary" id="btn-next">Next &rarr;</button>
+        </div>
+        <p class="keys">Keys: <kbd>1</kbd>–<kbd>5</kbd> overall · <kbd>&larr;</kbd> <kbd>&rarr;</kbd> previous, next · <kbd>S</kbd> <kbd>W</kbd> <kbd>F</kbd> view · <kbd>Z</kbd> zoom · <kbd>Space</kbd> flip, or play video</p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============================== RESULTS -->
+  <section id="results" class="screen scroll" hidden>
+    <div class="gate" id="gate" hidden>
+      <h1>This reveals which side was enhanced</h1>
+      <p class="muted" id="gate-text"></p>
+      <div class="btns">
+        <button type="button" class="btn primary" id="gate-back">Back to the review</button>
+        <button type="button" class="btn" id="gate-show">Show results anyway</button>
+      </div>
+    </div>
+    <div class="page" id="results-body">
+      <div class="results-head">
+        <h1>Results</h1>
+        <div class="actions">
+          <button type="button" class="btn" id="btn-add-results">Add results files</button>
+          <button type="button" class="btn" id="btn-export-json">Download my results (JSON)</button>
+          <button type="button" class="btn" id="btn-export-csv">Download all as CSV</button>
+          <input type="file" id="results-files" accept=".json,application/json" multiple hidden>
+        </div>
+      </div>
+      <div class="reviewers" id="reviewers"></div>
+      <div class="issues" id="import-issues"></div>
+      <p class="muted" id="results-empty">No scores yet. Review some pairs, or add results files from other reviewers.</p>
+      <div id="results-content" hidden>
+        <div class="verdict" id="verdict"></div>
+        <div class="legend"><span><i class="s-pos"></i>Enhanced better</span><span><i class="s-mid"></i>Same</span><span><i class="s-neg"></i>Original better</span></div>
+        <div class="section"><h2>By shot</h2><div class="table-wrap"><table id="t-shot"></table></div></div>
+        <div class="section"><h2>By variant (tool settings)</h2><div class="table-wrap"><table id="t-variant"></table></div></div>
+        <div class="section"><h2>By aspect</h2><div class="table-wrap"><table id="t-aspect"></table></div></div>
+        <div class="section"><h2>Client delivery</h2><div class="table-wrap"><table id="t-accept"></table></div></div>
+        <div class="section"><h2>Every comparison</h2><div class="table-wrap"><table id="t-all"></table></div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const KIT = 'dlss5-ab';
+  const STORE = 'dlss5ab:v1:';
+  const IMG_EXT = ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp'];
+  const VID_EXT = ['mp4', 'webm', 'm4v', 'mov', 'ogv'];
+  const NO_BROWSER = ['tif', 'tiff', 'exr', 'psd', 'dpx', 'hdr'];
+  const SEP = /[\s._\-()[\]]/;
+  const OVERALL = [
+    { v: -2, label: 'A much better' }, { v: -1, label: 'A better' }, { v: 0, label: 'Same' },
+    { v: 1, label: 'B better' }, { v: 2, label: 'B much better' }
+  ];
+  const CRITERIA = [
+    { key: 'realism', label: 'Realism', sub: 'Looks more like a photograph' },
+    { key: 'lighting', label: 'Lighting and mood', sub: 'Light, shadow and glare as intended' },
+    { key: 'materials', label: 'Materials and colour', sub: 'Finishes and colours look right' },
+    { key: 'people', label: 'People', sub: 'Faces, skin, clothing' },
+    { key: 'vegetation', label: 'Vegetation', sub: 'Plants, trees, grass' },
+    { key: 'detail', label: 'Fine detail', sub: 'Edges, railings, text; fewer artefacts' },
+    { key: 'stability', label: 'Stability over time', sub: 'Less flicker or crawling', video: true }
+  ];
+  const PREF_WORDS = { '-2': 'Original much better', '-1': 'Original better', '0': 'Same', '1': 'Enhanced better', '2': 'Enhanced much better' };
+
+  const state = {
+    before: [], after: [], unsupported: [],
+    pairs: [], pairById: {}, unmatched: [], lonely: [], identical: [],
+    session: null, storeKey: null, idx: 0, renderToken: 0,
+    mode: 'side', zoom: 'fit', flipB: false, wipe: 50,
+    view: null, imported: {}, importIssues: [], revealed: false, resetArmed: false
+  };
+
+  const $ = (id) => document.getElementById(id);
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function storeGet(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function storeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* storage unavailable */ } }
+  function storeDel(key) { try { localStorage.removeItem(key); } catch (e) { /* storage unavailable */ } }
+  function extOf(name) { const i = name.lastIndexOf('.'); return i < 0 ? '' : name.slice(i + 1).toLowerCase(); }
+  function stemOf(name) { const i = name.lastIndexOf('.'); return i < 0 ? name : name.slice(0, i); }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function shuffle(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  function fmtTime(t) {
+    if (!isFinite(t)) t = 0;
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2);
+  }
+  function signed(x) { return (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(2); }
+
+  // ------------------------------------------------------------------ files and pairing
+
+  function describe(file) {
+    const ext = extOf(file.name);
+    let kind = null;
+    if (IMG_EXT.includes(ext)) kind = 'image';
+    else if (VID_EXT.includes(ext)) kind = 'video';
+    else if (NO_BROWSER.includes(ext)) kind = 'unsupported';
+    return { file, name: file.name, stem: stemOf(file.name), kind, url: null, key: file.name + '|' + file.size + '|' + file.lastModified };
+  }
+
+  function urlOf(item) {
+    if (!item.url) item.url = URL.createObjectURL(item.file);
+    return item.url;
+  }
+
+  function addFiles(side, files) {
+    const list = state[side];
+    for (const f of files) {
+      const d = describe(f);
+      if (!d.kind) continue;
+      if (d.kind === 'unsupported') {
+        if (!state.unsupported.some((u) => u.key === d.key)) state.unsupported.push(Object.assign(d, { side }));
+        continue;
+      }
+      if (list.some((x) => x.key === d.key)) continue;
+      const same = list.findIndex((x) => x.name.toLowerCase() === d.name.toLowerCase());
+      if (same >= 0) { if (list[same].url) URL.revokeObjectURL(list[same].url); list.splice(same, 1); }
+      list.push(d);
+    }
+    refreshPairs();
+  }
+
+  function clearFiles(side) {
+    for (const d of state[side]) if (d.url) URL.revokeObjectURL(d.url);
+    state[side] = [];
+    state.unsupported = state.unsupported.filter((u) => u.side !== side);
+    refreshPairs();
+  }
+
+  function findStem(afterStem, beforeStem) {
+    const a = afterStem.toLowerCase(), b = beforeStem.toLowerCase();
+    if (a === b) return 0;
+    let from = 0, idx;
+    while ((idx = a.indexOf(b, from)) !== -1) {
+      const okBefore = idx === 0 || SEP.test(a[idx - 1]);
+      const okAfter = idx + b.length === a.length || SEP.test(a[idx + b.length]);
+      if (okBefore && okAfter) return idx;
+      from = idx + 1;
+    }
+    return -1;
+  }
+
+  function matchPairs() {
+    const pairs = [], unmatched = [], identical = [];
+    for (const a of state.after) {
+      let best = null;
+      for (const b of state.before) {
+        if (b.kind !== a.kind) continue;
+        const idx = findStem(a.stem, b.stem);
+        if (idx >= 0 && (!best || b.stem.length > best.b.stem.length)) best = { b, idx };
+      }
+      if (!best) { unmatched.push(a); continue; }
+      const rest = (a.stem.slice(0, best.idx) + ' ' + a.stem.slice(best.idx + best.b.stem.length))
+        .replace(/^[\s._\-()[\]]+|[\s._\-()[\]]+$/g, '').replace(/[\s._\-]{2,}/g, '_');
+      if (a.file.size === best.b.file.size && a.file.lastModified === best.b.file.lastModified && a.name === best.b.name) identical.push(a);
+      pairs.push({ shot: best.b.stem, variant: rest || 'default', kind: a.kind, before: best.b, after: a });
+    }
+    const seen = {};
+    pairs.sort((x, y) => x.shot.localeCompare(y.shot) || x.variant.localeCompare(y.variant));
+    for (const p of pairs) {
+      let id = p.shot + '|' + p.variant;
+      if (seen[id]) { seen[id]++; p.variant += ' (' + seen[id] + ')'; id = p.shot + '|' + p.variant; } else seen[id] = 1;
+      p.id = id;
+    }
+    const lonely = state.before.filter((b) => !pairs.some((p) => p.before === b));
+    return { pairs, unmatched, lonely, identical };
+  }
+
+  function refreshPairs() {
+    const m = matchPairs();
+    state.pairs = m.pairs; state.unmatched = m.unmatched; state.lonely = m.lonely; state.identical = m.identical;
+    state.pairById = {};
+    for (const p of state.pairs) state.pairById[p.id] = p;
+    renderSetup();
+  }
+
+  // ------------------------------------------------------------------ setup screen
+
+  function countText(list, side) {
+    if (!list.length) return 'No files yet';
+    const img = list.filter((d) => d.kind === 'image').length, vid = list.length - img;
+    const unsup = state.unsupported.filter((u) => u.side === side).length;
+    let t = plural(list.length, 'file') + ' (' + [img ? plural(img, 'image') : '', vid ? plural(vid, 'video') : ''].filter(Boolean).join(', ') + ')';
+    if (unsup) t += ', ' + unsup + ' skipped';
+    return t;
+  }
+
+  function renderSetup() {
+    $('count-before').textContent = countText(state.before, 'before');
+    $('count-after').textContent = countText(state.after, 'after');
+    const rows = $('pair-rows');
+    rows.replaceChildren();
+    if (!state.pairs.length) {
+      const tr = el('tr', 'empty-row'); const td = el('td', null, 'Add originals and enhanced files to see the pairs.');
+      td.colSpan = 5; tr.append(td); rows.append(tr);
+    }
+    for (const p of state.pairs) {
+      const tr = el('tr');
+      tr.append(el('td', null, p.shot), el('td', null, p.variant), el('td', null, p.kind), el('td', 'file', p.before.name), el('td', 'file', p.after.name));
+      rows.append(tr);
+    }
+    const shots = new Set(state.pairs.map((p) => p.shot)).size;
+    $('pair-summary').textContent = state.pairs.length ? plural(state.pairs.length, 'pair') + ' across ' + plural(shots, 'shot') : '';
+
+    const issues = $('pair-issues');
+    issues.replaceChildren();
+    const add = (text, bad) => issues.append(el('div', 'issue' + (bad ? ' bad' : ''), text));
+    if (state.unmatched.length) add('No original found for: ' + state.unmatched.map((d) => d.name).join(', ') + '. An enhanced file\'s name must contain its original\'s name.', true);
+    if (state.lonely.length && state.after.length) add('No enhanced version yet for: ' + state.lonely.map((d) => d.name).join(', ') + '.');
+    if (state.identical.length) add('These enhanced files are the same files as their originals: ' + state.identical.map((d) => d.name).join(', ') + '. Check that you loaded the tool\'s output folder.', true);
+    if (state.unsupported.length) add('Browsers can\'t show ' + state.unsupported.map((d) => d.name).join(', ') + '. Export PNG from the tool, or convert with ffmpeg: ffmpeg -i in.tif -pix_fmt rgb48be out.png', true);
+    updateStart();
+  }
+
+  function reviewerName() { return $('reviewer').value.trim(); }
+
+  function updateStart() {
+    const name = reviewerName();
+    const btn = $('btn-start'), note = $('start-note'), reset = $('btn-reset');
+    $('who').textContent = name ? 'Reviewer: ' + name : '';
+    btn.disabled = !name || !state.pairs.length;
+    const saved = name ? storeGet(STORE + name.toLowerCase()) : null;
+    const ids = state.pairs.map((p) => p.id);
+    const done = saved && saved.scores ? ids.filter((id) => saved.scores[id] && saved.scores[id].overall != null).length : 0;
+    reset.hidden = !saved;
+    if (!state.resetArmed) reset.textContent = 'Start over';
+    if (!name) { btn.textContent = 'Start review'; note.textContent = 'Enter your name and load at least one pair.'; return; }
+    if (!state.pairs.length) { btn.textContent = 'Start review'; note.textContent = 'Load at least one pair.'; return; }
+    if (saved && done) {
+      btn.textContent = 'Resume review';
+      note.textContent = 'Found your earlier session: ' + done + ' of ' + ids.length + ' pairs scored. Sides and order are kept.';
+    } else {
+      btn.textContent = 'Start review';
+      note.textContent = plural(ids.length, 'pair') + ' ready. Sides are drawn at random per pair.';
+    }
+  }
+
+  function spreadShots(order) {
+    // Avoid showing two variants of the same shot back to back where possible.
+    const out = order.slice();
+    for (let i = 1; i < out.length; i++) {
+      if (state.pairById[out[i]].shot !== state.pairById[out[i - 1]].shot) continue;
+      for (let j = i + 1; j < out.length; j++) {
+        if (state.pairById[out[j]].shot !== state.pairById[out[i - 1]].shot) { [out[i], out[j]] = [out[j], out[i]]; break; }
+      }
+    }
+    return out;
+  }
+
+  function startReview() {
+    const name = reviewerName();
+    if (!name || !state.pairs.length) return;
+    const key = STORE + name.toLowerCase();
+    const ids = state.pairs.map((p) => p.id);
+    const shuffleOn = $('opt-shuffle').checked;
+    const arrange = (list) => (shuffleOn ? spreadShots(shuffle(list)) : list.slice());
+    let s = storeGet(key);
+    if (s && s.kit === KIT && s.sides && s.scores) {
+      const keep = (s.order || []).filter((id) => ids.includes(id));
+      s.order = keep.concat(arrange(ids.filter((id) => !keep.includes(id))));
+    } else {
+      s = { kit: KIT, version: 1, created: new Date().toISOString(), order: arrange(ids), sides: {}, scores: {}, pairsMeta: {} };
+    }
+    s.reviewer = name;
+    s.fps = Number($('opt-fps').value) || 25;
+    for (const p of state.pairs) {
+      if (s.sides[p.id] !== 'A' && s.sides[p.id] !== 'B') s.sides[p.id] = Math.random() < 0.5 ? 'A' : 'B';
+      s.pairsMeta[p.id] = { shot: p.shot, variant: p.variant, kind: p.kind, original: p.before.name, enhanced: p.after.name };
+    }
+    state.session = s; state.storeKey = key; state.revealed = false;
+    storeSet('dlss5ab:lastReviewer', name);
+    save();
+    const firstOpen = s.order.findIndex((id) => !isScored(id));
+    state.idx = firstOpen >= 0 ? firstOpen : 0;
+    document.querySelector('.tab[data-screen="review"]').disabled = false;
+    showScreen('review');
+    renderPair();
+  }
+
+  function resetSession() {
+    const name = reviewerName();
+    if (!name) return;
+    if (!state.resetArmed) {
+      state.resetArmed = true;
+      $('btn-reset').textContent = 'Click again to discard your saved scores';
+      setTimeout(() => { state.resetArmed = false; updateStart(); }, 4000);
+      return;
+    }
+    state.resetArmed = false;
+    storeDel(STORE + name.toLowerCase());
+    if (state.session && state.session.reviewer.toLowerCase() === name.toLowerCase()) {
+      state.session = null;
+      document.querySelector('.tab[data-screen="review"]').disabled = true;
+    }
+    updateStart();
+  }
+
+  // ------------------------------------------------------------------ screens
+
+  function showScreen(name) {
+    for (const s of ['setup', 'review', 'results']) $(s).hidden = s !== name;
+    for (const t of document.querySelectorAll('.tab')) {
+      if (t.dataset.screen === name) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+    }
+    if (name !== 'review') pauseVideos();
+    if (name === 'review') requestAnimationFrame(sizeStages);
+    if (name === 'results') openResults();
+  }
+
+  // ------------------------------------------------------------------ review: viewer
+
+  function currentId() { return state.session ? state.session.order[state.idx] : null; }
+  function isScored(id) { const sc = state.session && state.session.scores[id]; return !!(sc && sc.overall != null); }
+
+  function makeMedia(item, kind) {
+    if (kind === 'video') {
+      const v = document.createElement('video');
+      v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+      v.src = urlOf(item);
+      return v;
+    }
+    const img = new Image();
+    img.decoding = 'async'; img.alt = ''; img.draggable = false;
+    img.src = urlOf(item);
+    return img;
+  }
+
+  function whenReady(m) {
+    if (m.tagName === 'VIDEO') {
+      return new Promise((resolve, reject) => {
+        if (m.readyState >= 2) { resolve({ w: m.videoWidth, h: m.videoHeight }); return; }
+        m.addEventListener('loadeddata', () => resolve({ w: m.videoWidth, h: m.videoHeight }), { once: true });
+        m.addEventListener('error', () => reject(new Error('This browser cannot play the video. Use H.264 MP4 or WebM.')), { once: true });
+      });
+    }
+    return m.decode().then(() => ({ w: m.naturalWidth, h: m.naturalHeight }), () => { throw new Error('This browser cannot show the image.'); });
+  }
+
+  function teardownView() {
+    const v = state.view;
+    if (!v) return;
+    if (v.raf) cancelAnimationFrame(v.raf);
+    for (const m of [v.a, v.b]) if (m.tagName === 'VIDEO') { m.pause(); m.removeAttribute('src'); m.load(); }
+    state.view = null;
+  }
+
+  function viewerMessage(text) {
+    const viewer = $('viewer');
+    viewer.replaceChildren(el('p', 'viewer-msg', text));
+  }
+
+  async function renderPair() {
+    const s = state.session, id = currentId();
+    if (!s || !id) return;
+    const p = state.pairById[id];
+    teardownView();
+    $('pair-pos').textContent = 'Pair ' + (state.idx + 1) + ' of ' + s.order.length;
+    $('pair-shot').textContent = p ? p.shot : '';
+    renderScores();
+    if (!p) { viewerMessage('The files for this pair are not loaded. Go to Setup and add them, or move on.'); $('video-bar').hidden = true; return; }
+    const token = ++state.renderToken;
+    const enhancedOnA = s.sides[id] === 'A';
+    const a = makeMedia(enhancedOnA ? p.after : p.before, p.kind);
+    const b = makeMedia(enhancedOnA ? p.before : p.after, p.kind);
+    state.view = { a, b, kind: p.kind, w: 0, h: 0, panes: [], raf: 0 };
+    viewerMessage('Loading…');
+    $('video-bar').hidden = p.kind !== 'video';
+    $('size-warning').hidden = true;
+    let sa, sb;
+    try { [sa, sb] = await Promise.all([whenReady(a), whenReady(b)]); }
+    catch (err) { if (token === state.renderToken) viewerMessage(err.message); return; }
+    if (token !== state.renderToken || !state.view) return;
+    state.view.w = sa.w; state.view.h = sa.h;
+    if (sa.w !== sb.w || sa.h !== sb.h) {
+      $('size-warning').textContent = 'The two sides have different sizes (A ' + sa.w + '×' + sa.h + ', B ' + sb.w + '×' + sb.h + '). B is scaled to match A, which also hints which side was processed.';
+      $('size-warning').hidden = false;
+    }
+    state.flipB = false;
+    layout();
+    if (p.kind === 'video') {
+      a.currentTime = 0; b.currentTime = 0;
+      state.view.raf = requestAnimationFrame(videoTick);
+    }
+  }
+
+  function makePane(label, media, right) {
+    const wrap = el('div', 'pane-wrap'), pane = el('div', 'pane'), stage = el('div', 'stage');
+    if (media) { media.className = ''; media.style.clipPath = ''; media.style.visibility = ''; stage.append(media); }
+    pane.append(stage); wrap.append(pane);
+    let chip = null;
+    if (label) { chip = el('span', 'chip' + (right ? ' right' : ''), label); wrap.append(chip); }
+    return { wrap, pane, stage, chip };
+  }
+
+  function layout() {
+    const v = state.view;
+    if (!v || !v.w) return;
+    const viewer = $('viewer');
+    const isVideo = v.kind === 'video';
+    const wasPlaying = isVideo && !v.a.paused;
+    const t = isVideo ? v.a.currentTime : 0;
+    viewer.replaceChildren();
+    viewer.dataset.mode = state.mode;
+    v.panes = [];
+    if (state.mode === 'side') {
+      const p1 = makePane('A', v.a), p2 = makePane('B', v.b);
+      viewer.append(p1.wrap, p2.wrap);
+      v.panes = [p1, p2];
+      syncScroll(p1.pane, p2.pane);
+      enablePan(p1.pane, null); enablePan(p2.pane, null);
+    } else {
+      const p = makePane(null, null);
+      v.a.className = 'layer'; v.b.className = 'layer';
+      v.a.style.clipPath = ''; v.b.style.clipPath = ''; v.a.style.visibility = ''; v.b.style.visibility = '';
+      p.stage.append(v.a, v.b);
+      viewer.append(p.wrap);
+      v.panes = [p];
+      if (state.mode === 'wipe') {
+        p.stage.classList.add('wipe');
+        const line = el('div', 'wipe-line');
+        p.stage.append(line);
+        p.wrap.append(el('span', 'chip', 'A'), el('span', 'chip right', 'B'));
+        v.line = line;
+        let dragging = false;
+        const setFrom = (e) => {
+          const r = p.stage.getBoundingClientRect();
+          state.wipe = Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100));
+          applyWipe();
+        };
+        p.stage.addEventListener('pointerdown', (e) => { dragging = true; p.stage.setPointerCapture(e.pointerId); setFrom(e); });
+        p.stage.addEventListener('pointermove', (e) => { if (dragging) setFrom(e); });
+        p.stage.addEventListener('pointerup', () => { dragging = false; });
+        p.stage.addEventListener('pointercancel', () => { dragging = false; });
+        applyWipe();
+      } else {
+        p.stage.classList.add('flip');
+        const chip = el('span', 'chip big', 'A');
+        p.wrap.append(chip);
+        v.flipChip = chip;
+        enablePan(p.pane, toggleFlip);
+        applyFlip();
+      }
+    }
+    sizeStages();
+    for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode));
+    for (const b of document.querySelectorAll('[data-zoom]')) b.setAttribute('aria-pressed', String(b.dataset.zoom === String(state.zoom)));
+    if (isVideo) {
+      v.a.currentTime = t; v.b.currentTime = t;
+      if (wasPlaying) playVideos();
+    }
+  }
+
+  function applyWipe() {
+    const v = state.view;
+    if (!v || !v.line) return;
+    v.b.style.clipPath = 'inset(0 0 0 ' + state.wipe + '%)';
+    v.line.style.left = state.wipe + '%';
+  }
+
+  function applyFlip() {
+    const v = state.view;
+    if (!v || state.mode !== 'flip') return;
+    v.b.style.visibility = state.flipB ? 'visible' : 'hidden';
+    if (v.flipChip) v.flipChip.textContent = state.flipB ? 'B' : 'A';
+  }
+
+  function toggleFlip() { state.flipB = !state.flipB; applyFlip(); }
+
+  function sizeStages() {
+    const v = state.view;
+    if (!v || !v.w) return;
+    const dpr = window.devicePixelRatio || 1;
+    for (const p of v.panes) {
+      const pw = p.pane.clientWidth, ph = p.pane.clientHeight;
+      if (!pw || !ph) continue;
+      const scale = state.zoom === 'fit' ? Math.min(pw / v.w, ph / v.h) : Number(state.zoom) / dpr;
+      p.stage.style.width = Math.max(1, Math.round(v.w * scale)) + 'px';
+      p.stage.style.height = Math.max(1, Math.round(v.h * scale)) + 'px';
+      p.stage.classList.toggle('px', scale * dpr >= 2);
+      p.pane.classList.toggle('grab', state.zoom !== 'fit' && state.mode !== 'wipe');
+      p.pane.scrollLeft = (p.pane.scrollWidth - pw) / 2;
+      p.pane.scrollTop = (p.pane.scrollHeight - ph) / 2;
+    }
+  }
+
+  function syncScroll(a, b) {
+    let lock = false;
+    const link = (src, dst) => () => {
+      if (lock) return;
+      lock = true;
+      dst.scrollLeft = src.scrollLeft; dst.scrollTop = src.scrollTop;
+      requestAnimationFrame(() => { lock = false; });
+    };
+    a.addEventListener('scroll', link(a, b));
+    b.addEventListener('scroll', link(b, a));
+  }
+
+  function enablePan(pane, onClick) {
+    // Drag to pan when zoomed in; a click without movement calls onClick (used by Flip).
+    let start = null;
+    pane.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const r = pane.getBoundingClientRect();
+      if (e.clientX - r.left > pane.clientWidth || e.clientY - r.top > pane.clientHeight) return; // on a scrollbar
+      if (!onClick && state.zoom === 'fit') return;
+      start ={ x: e.clientX, y: e.clientY, sl: pane.scrollLeft, st: pane.scrollTop, moved: false };
+      pane.setPointerCapture(e.pointerId);
+    });
+    pane.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) start.moved = true;
+      if (start.moved && state.zoom !== 'fit') {
+        pane.classList.add('grabbing');
+        pane.scrollLeft = start.sl - dx; pane.scrollTop = start.st - dy;
+      }
+    });
+    const end = () => {
+      if (start && !start.moved && onClick) onClick();
+      start = null;
+      pane.classList.remove('grabbing');
+    };
+    pane.addEventListener('pointerup', end);
+    pane.addEventListener('pointercancel', () => { start = null; pane.classList.remove('grabbing'); });
+  }
+
+  function setMode(mode) { if (state.mode === mode) return; state.mode = mode; layout(); }
+  function setZoom(z) { state.zoom = z; sizeStages(); for (const b of document.querySelectorAll('[data-zoom]')) b.setAttribute('aria-pressed', String(b.dataset.zoom === String(state.zoom))); }
+  function cycleZoom() { const order = ['fit', '1', '2']; setZoom(order[(order.indexOf(String(state.zoom)) + 1) % order.length]); }
+
+  // ------------------------------------------------------------------ review: video
+
+  function playVideos() {
+    const v = state.view;
+    if (!v || v.kind !== 'video') return;
+    v.b.currentTime = v.a.currentTime;
+    Promise.all([v.a.play(), v.b.play()]).catch(() => {});
+    $('v-play').firstChild.textContent = 'Pause ';
+  }
+  function pauseVideos() {
+    const v = state.view;
+    if (!v || v.kind !== 'video') return;
+    v.a.pause(); v.b.pause();
+    v.b.currentTime = v.a.currentTime;
+    $('v-play').firstChild.textContent = 'Play ';
+  }
+  function togglePlay() { const v = state.view; if (!v || v.kind !== 'video') return; if (v.a.paused) playVideos(); else pauseVideos(); }
+  function fps() { return (state.session && state.session.fps) || Number($('opt-fps').value) || 25; }
+  function stepFrame(dir) {
+    const v = state.view;
+    if (!v || v.kind !== 'video') return;
+    pauseVideos();
+    const d = v.a.duration || 0;
+    const t = Math.min(Math.max(0, v.a.currentTime + dir / fps()), Math.max(0, d - 0.001));
+    v.a.currentTime = t; v.b.currentTime = t;
+  }
+  function videoTick() {
+    const v = state.view;
+    if (!v || v.kind !== 'video') return;
+    if (!v.a.paused && Math.abs(v.b.currentTime - v.a.currentTime) > 0.05) v.b.currentTime = v.a.currentTime;
+    const d = v.a.duration || 0;
+    if (document.activeElement !== $('v-scrub')) $('v-scrub').value = d ? Math.round((v.a.currentTime / d) * 1000) : 0;
+    $('v-time').textContent = fmtTime(v.a.currentTime) + ' / ' + fmtTime(d);
+    v.raf = requestAnimationFrame(videoTick);
+  }
+
+  // ------------------------------------------------------------------ review: scoring
+
+  function scoreFor(id) {
+    const s = state.session;
+    if (!s.scores[id]) s.scores[id] = { overall: null, crit: {}, accept: { A: null, B: null }, comment: '', at: '' };
+    return s.scores[id];
+  }
+
+  function save() {
+    if (!state.session || !state.storeKey) return;
+    storeSet(state.storeKey, state.session);
+    renderProgress();
+  }
+
+  function touch(id) { scoreFor(id).at = new Date().toISOString(); save(); }
+
+  function buildScorePanel() {
+    const overall = $('overall');
+    OVERALL.forEach((o, i) => {
+      const b = el('button', 'opt');
+      b.type = 'button'; b.dataset.v = String(o.v);
+      b.append(el('kbd', null, String(i + 1)), el('span', null, o.label));
+      b.addEventListener('click', () => setOverall(o.v));
+      overall.append(b);
+    });
+    const crit = $('crit');
+    for (const c of CRITERIA) {
+      const tr = el('tr'); tr.dataset.key = c.key;
+      if (c.video) tr.dataset.video = '1';
+      const td1 = el('td'); const lbl = el('span', 'lbl', c.label); lbl.append(el('span', 'sub', c.sub)); td1.append(lbl);
+      const td2 = el('td'); const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', c.label);
+      for (const [val, text] of [['A', 'A'], ['same', 'Same'], ['B', 'B'], ['na', 'n/a']]) {
+        const b = el('button', null, text); b.type = 'button'; b.dataset.val = val;
+        b.addEventListener('click', () => { const id = currentId(); if (!id) return; scoreFor(id).crit[c.key] = val; touch(id); renderScores(); });
+        seg.append(b);
+      }
+      td2.append(seg); tr.append(td1, td2); crit.append(tr);
+    }
+    const acc = $('accept');
+    for (const side of ['A', 'B']) {
+      acc.append(el('span', null, side));
+      const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Client-ready: ' + side);
+      for (const [val, text] of [[true, 'Yes'], [false, 'No']]) {
+        const b = el('button', null, text); b.type = 'button'; b.dataset.side = side; b.dataset.val = String(val);
+        b.addEventListener('click', () => { const id = currentId(); if (!id) return; scoreFor(id).accept[side] = val; touch(id); renderScores(); });
+        seg.append(b);
+      }
+      acc.append(seg);
+    }
+    $('comment').addEventListener('input', () => { const id = currentId(); if (!id) return; scoreFor(id).comment = $('comment').value; touch(id); });
+  }
+
+  function setOverall(v) { const id = currentId(); if (!id) return; scoreFor(id).overall = v; touch(id); renderScores(); }
+
+  function renderScores() {
+    const id = currentId();
+    if (!id) return;
+    const sc = scoreFor(id);
+    const kind = (state.pairById[id] || state.session.pairsMeta[id] || {}).kind;
+    for (const b of $('overall').children) b.setAttribute('aria-pressed', String(sc.overall != null && Number(b.dataset.v) === sc.overall));
+    for (const tr of $('crit').children) {
+      tr.hidden = tr.dataset.video === '1' && kind !== 'video';
+      const val = sc.crit[tr.dataset.key];
+      for (const b of tr.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.val === val));
+    }
+    for (const b of $('accept').querySelectorAll('button')) b.setAttribute('aria-pressed', String(sc.accept[b.dataset.side] === (b.dataset.val === 'true')));
+    $('comment').value = sc.comment || '';
+    renderProgress();
+  }
+
+  function renderProgress() {
+    const s = state.session;
+    if (!s) return;
+    const done = s.order.filter(isScored).length;
+    $('progress').textContent = done + ' of ' + s.order.length + ' scored';
+    $('btn-prev').disabled = state.idx === 0;
+    $('btn-next').textContent = state.idx === s.order.length - 1 ? 'Finish' : 'Next →';
+    $('who').textContent = 'Reviewer: ' + s.reviewer + ' · ' + done + '/' + s.order.length;
+  }
+
+  function go(delta) {
+    const s = state.session;
+    if (!s) return;
+    const n = state.idx + delta;
+    if (n < 0) return;
+    if (n >= s.order.length) {
+      const open = s.order.findIndex((id) => !isScored(id));
+      if (open >= 0) { state.idx = open; renderPair(); return; }
+      showScreen('results');
+      return;
+    }
+    state.idx = n;
+    renderPair();
+  }
+
+  // ------------------------------------------------------------------ results
+
+  function ownRecords() {
+    const s = state.session;
+    if (!s) return [];
+    const out = [];
+    for (const id of Object.keys(s.scores)) {
+      const sc = s.scores[id], m = s.pairsMeta[id], side = s.sides[id];
+      if (!m || !side || sc.overall == null) continue;
+      const other = side === 'A' ? 'B' : 'A';
+      const criteria = {};
+      for (const c of CRITERIA) {
+        const v = sc.crit[c.key];
+        if (!v) continue;
+        criteria[c.key] = v === 'same' || v === 'na' ? v : v === side ? 'enhanced' : 'original';
+      }
+      const pref = side === 'B' ? sc.overall : -sc.overall;
+      out.push({
+        reviewer: s.reviewer, pairId: id, shot: m.shot, variant: m.variant, kind: m.kind,
+        enhancedSide: side, original: m.original, enhanced: m.enhanced,
+        preference: pref === 0 ? 0 : pref, criteria,
+        acceptEnhanced: sc.accept[side] == null ? null : sc.accept[side],
+        acceptOriginal: sc.accept[other] == null ? null : sc.accept[other],
+        comment: sc.comment || '', scoredAt: sc.at || ''
+      });
+    }
+    return out;
+  }
+
+  function allRecords() {
+    const map = new Map();
+    for (const recs of Object.values(state.imported)) for (const r of recs) map.set(r.reviewer + '|' + r.pairId, r);
+    for (const r of ownRecords()) map.set(r.reviewer + '|' + r.pairId, r);
+    return [...map.values()];
+  }
+
+  function groupBy(list, fn) {
+    const m = new Map();
+    for (const x of list) { const k = fn(x); if (!m.has(k)) m.set(k, []); m.get(k).push(x); }
+    return m;
+  }
+  function prefStats(recs) {
+    let pos = 0, neg = 0, zero = 0, sum = 0;
+    for (const r of recs) { sum += r.preference; if (r.preference > 0) pos++; else if (r.preference < 0) neg++; else zero++; }
+    return { n: recs.length, pos, neg, zero, mean: recs.length ? sum / recs.length : 0 };
+  }
+  function critStats(recs, key) {
+    let e = 0, s = 0, o = 0;
+    for (const r of recs) { const v = r.criteria && r.criteria[key]; if (v === 'enhanced') e++; else if (v === 'original') o++; else if (v === 'same') s++; }
+    return { e, s, o, n: e + s + o };
+  }
+  function bestVariant(recs) {
+    let best = null;
+    for (const [name, vr] of groupBy(recs, (r) => r.variant)) {
+      const st = prefStats(vr);
+      if (!best || st.mean > best.st.mean) best = { name, st, recs: vr };
+    }
+    return best;
+  }
+
+  function stackBar(pos, mid, neg) {
+    const n = pos + mid + neg, bar = el('div', 'stack');
+    bar.title = pos + ' enhanced better, ' + mid + ' same, ' + neg + ' original better';
+    if (!n) return bar;
+    for (const [cls, v] of [['s-pos', pos], ['s-mid', mid], ['s-neg', neg]]) { const s = el('span', cls); s.style.width = (v / n) * 100 + '%'; bar.append(s); }
+    return bar;
+  }
+
+  function fillTable(table, head, rows) {
+    table.replaceChildren();
+    const thead = el('thead'), tr = el('tr');
+    for (const h of head) { const th = el('th', h.num ? 'num' : null, h.label); tr.append(th); }
+    thead.append(tr);
+    const tbody = el('tbody');
+    for (const row of rows) {
+      const r = el('tr');
+      row.forEach((cell, i) => {
+        const td = el('td', head[i].num ? 'num' : head[i].cls || null);
+        if (cell instanceof Node) td.append(cell); else td.textContent = cell == null ? '' : String(cell);
+        r.append(td);
+      });
+      tbody.append(r);
+    }
+    table.append(thead, tbody);
+  }
+
+  function prefCell(x) { const s = el('span', x > 0 ? 'pref-pos' : x < 0 ? 'pref-neg' : null, signed(x)); return s; }
+
+  function openResults() {
+    const s = state.session;
+    const done = s ? s.order.filter(isScored).length : 0;
+    const incomplete = s && done < s.order.length && !state.revealed;
+    $('gate').hidden = !incomplete;
+    $('results-body').hidden = !!incomplete;
+    if (incomplete) {
+      $('gate-text').textContent = 'You have scored ' + done + ' of ' + s.order.length + ' pairs. Looking at the results now will tell you which side was enhanced, which makes the rest of your review less blind.';
+      return;
+    }
+    if (s && done === s.order.length) state.revealed = true;
+    renderResults();
+  }
+
+  function renderResults() {
+    const records = allRecords();
+    $('btn-export-json').disabled = !ownRecords().length;
+    $('btn-export-csv').disabled = !records.length;
+
+    const reviewers = $('reviewers');
+    reviewers.replaceChildren();
+    const byReviewer = groupBy(records, (r) => r.reviewer);
+    const ownName = state.session ? state.session.reviewer : null;
+    for (const [name, recs] of byReviewer) {
+      const chip = el('span', 'rchip', name + ' · ' + plural(recs.length, 'comparison') + (name === ownName ? ' (you)' : ''));
+      if (state.imported[name] && name !== ownName) {
+        const rm = el('button', 'link', 'Remove'); rm.type = 'button';
+        rm.addEventListener('click', () => { delete state.imported[name]; renderResults(); });
+        chip.append(rm);
+      }
+      reviewers.append(chip);
+    }
+    const iss = $('import-issues');
+    iss.replaceChildren(...state.importIssues.map((t) => el('div', 'issue bad', t)));
+
+    $('results-empty').hidden = records.length > 0;
+    $('results-content').hidden = records.length === 0;
+    if (!records.length) return;
+
+    // Verdict, using the protocol's decision rule.
+    const shots = groupBy(records, (r) => r.shot);
+    const clear = [];
+    let matWorse = 0, matN = 0;
+    for (const [shot, recs] of shots) {
+      const best = bestVariant(recs);
+      if (best.st.mean >= 0.5 && best.st.pos > best.st.n / 2) {
+        clear.push(shot + ' (' + best.name + ')');
+        const cs = critStats(best.recs, 'materials');
+        matWorse += cs.o; matN += cs.n;
+      }
+    }
+    const matOk = matN === 0 || matWorse / matN <= 1 / 3;
+    const good = clear.length >= 2 && matOk;
+    const verdict = $('verdict');
+    verdict.replaceChildren();
+    const call = el('div', 'call ' + (good ? 'good' : 'weak'));
+    call.append(el('span', 'step', 'Decision check'), el('b', null, good ? 'Worth more time' : 'Not convincing yet'));
+    const facts = el('div', 'facts');
+    facts.append(
+      el('p', null, 'Enhanced clearly preferred in ' + clear.length + ' of ' + plural(shots.size, 'shot') + (clear.length ? ': ' + clear.join(', ') + '.' : '.')),
+      el('p', null, matN ? 'On those shots, materials and colour were judged worse after enhancement in ' + matWorse + ' of ' + plural(matN, 'answer') + '.' : 'No materials and colour answers on clearly preferred shots.'),
+      el('p', 'muted small', 'Rule from the test protocol: the best setting per shot averages at least +0.5 with most reviewers preferring it, in at least 2 shots, and materials and colour are worse in no more than a third of those answers. Based on ' + plural(byReviewer.size, 'reviewer') + ' and ' + plural(records.length, 'comparison') + '.')
+    );
+    verdict.append(call, facts);
+
+    // By shot
+    const shotRows = [];
+    for (const [shot, recs] of [...shots].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const st = prefStats(recs), best = bestVariant(recs), mat = critStats(recs, 'materials');
+      shotRows.push([shot, st.n, stackBar(st.pos, st.zero, st.neg), prefCell(st.mean), best.name + ' (' + signed(best.st.mean) + ')', mat.n ? mat.o + ' of ' + mat.n : '–']);
+    }
+    fillTable($('t-shot'), [{ label: 'Shot' }, { label: 'Comparisons', num: true }, { label: 'Preference' }, { label: 'Mean −2…+2', num: true }, { label: 'Best variant' }, { label: 'Materials worse', num: true }], shotRows);
+
+    // By variant
+    const varRows = [];
+    for (const [name, recs] of [...groupBy(records, (r) => r.variant)].sort((a, b) => prefStats(b[1]).mean - prefStats(a[1]).mean)) {
+      const st = prefStats(recs);
+      varRows.push([name, new Set(recs.map((r) => r.shot)).size, st.n, stackBar(st.pos, st.zero, st.neg), prefCell(st.mean)]);
+    }
+    fillTable($('t-variant'), [{ label: 'Variant' }, { label: 'Shots', num: true }, { label: 'Comparisons', num: true }, { label: 'Preference' }, { label: 'Mean −2…+2', num: true }], varRows);
+
+    // By aspect
+    const aspectRows = [];
+    for (const c of CRITERIA) {
+      const cs = critStats(records, c.key);
+      if (!cs.n) continue;
+      aspectRows.push([c.label, cs.e, cs.s, cs.o, stackBar(cs.e, cs.s, cs.o)]);
+    }
+    fillTable($('t-aspect'), [{ label: 'Aspect' }, { label: 'Enhanced better', num: true }, { label: 'Same', num: true }, { label: 'Original better', num: true }, { label: '' }],
+      aspectRows.length ? aspectRows : [['No aspect answers yet', '', '', '', '']]);
+
+    // Client delivery
+    const acc = (key) => {
+      const ans = records.filter((r) => r[key] === true || r[key] === false);
+      const yes = ans.filter((r) => r[key] === true).length;
+      return [yes, ans.length, ans.length ? Math.round((yes / ans.length) * 100) + '%' : '–'];
+    };
+    fillTable($('t-accept'), [{ label: 'Version' }, { label: 'Yes', num: true }, { label: 'Answers', num: true }, { label: 'Client-ready', num: true }],
+      [['Enhanced'].concat(acc('acceptEnhanced')), ['Original'].concat(acc('acceptOriginal'))]);
+
+    // Every comparison
+    const all = records.slice().sort((a, b) => a.shot.localeCompare(b.shot) || a.variant.localeCompare(b.variant) || a.reviewer.localeCompare(b.reviewer));
+    fillTable($('t-all'), [{ label: 'Shot' }, { label: 'Variant' }, { label: 'Reviewer' }, { label: 'Enhanced was', num: true }, { label: 'Verdict' }, { label: 'Comment' }],
+      all.map((r) => [r.shot, r.variant, r.reviewer, r.enhancedSide, PREF_WORDS[String(r.preference)] || String(r.preference), r.comment]));
+  }
+
+  async function importResults(files) {
+    state.importIssues = [];
+    for (const f of files) {
+      try {
+        const data = JSON.parse(await f.text());
+        if (!data || data.kit !== KIT || !Array.isArray(data.records)) throw new Error('not a results file from this page');
+        const name = data.reviewer || f.name;
+        state.imported[name] = data.records
+          .filter((r) => r && typeof r.preference === 'number' && r.shot != null && r.pairId != null)
+          .map((r) => Object.assign({ variant: 'default', criteria: {}, comment: '' }, r, { reviewer: r.reviewer || name }));
+      } catch (err) {
+        state.importIssues.push(f.name + ': ' + err.message + '.');
+      }
+    }
+    renderResults();
+  }
+
+  function download(name, type, text) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'reviewer'; }
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  function exportJson() {
+    const recs = ownRecords();
+    if (!recs.length) return;
+    const s = state.session;
+    download('dlss5-review_' + slug(s.reviewer) + '_' + today() + '.json', 'application/json',
+      JSON.stringify({ kit: KIT, version: 1, reviewer: s.reviewer, exportedAt: new Date().toISOString(), records: recs }, null, 2));
+  }
+
+  function exportCsv() {
+    const recs = allRecords();
+    if (!recs.length) return;
+    const cols = ['reviewer', 'shot', 'variant', 'kind', 'enhanced_side', 'preference', 'verdict']
+      .concat(CRITERIA.map((c) => 'aspect_' + c.key), ['client_ready_enhanced', 'client_ready_original', 'original_file', 'enhanced_file', 'comment', 'scored_at']);
+    const q = (v) => { const t = v == null ? '' : String(v); return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const lines = [cols.join(',')];
+    for (const r of recs) {
+      const row = [r.reviewer, r.shot, r.variant, r.kind, r.enhancedSide, r.preference, PREF_WORDS[String(r.preference)]]
+        .concat(CRITERIA.map((c) => (r.criteria && r.criteria[c.key]) || ''),
+          [r.acceptEnhanced == null ? '' : r.acceptEnhanced ? 'yes' : 'no', r.acceptOriginal == null ? '' : r.acceptOriginal ? 'yes' : 'no',
+           r.original || '', r.enhanced || '', r.comment || '', r.scoredAt || '']);
+      lines.push(row.map(q).join(','));
+    }
+    download('dlss5-review_all_' + today() + '.csv', 'text/csv', '﻿' + lines.join('\r\n'));
+  }
+
+  // ------------------------------------------------------------------ drag and drop
+
+  async function filesFromDrop(dt) {
+    const entries = [];
+    for (const item of dt.items || []) {
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry) entries.push(entry);
+    }
+    if (!entries.length) return [...(dt.files || [])];
+    const out = [];
+    const walk = async (entry) => {
+      if (entry.isFile) { out.push(await new Promise((res, rej) => entry.file(res, rej))); return; }
+      if (entry.isDirectory) {
+        const reader = entry.createReader();
+        for (;;) {
+          const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+          if (!batch.length) break;
+          for (const e of batch) await walk(e);
+        }
+      }
+    };
+    for (const e of entries) await walk(e);
+    return out;
+  }
+
+  function wireDrop(zone, side) {
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      zone.classList.remove('over');
+      addFiles(side, await filesFromDrop(e.dataTransfer));
+    });
+  }
+
+  // ------------------------------------------------------------------ wiring
+
+  function init() {
+    buildScorePanel();
+    const last = storeGet('dlss5ab:lastReviewer');
+    if (typeof last === 'string') $('reviewer').value = last;
+
+    for (const t of document.querySelectorAll('.tab')) t.addEventListener('click', () => { if (!t.disabled) showScreen(t.dataset.screen); });
+    for (const b of document.querySelectorAll('[data-pick]')) b.addEventListener('click', () => $(b.dataset.pick).click());
+    for (const id of ['before-files', 'before-folder', 'after-files', 'after-folder']) {
+      $(id).addEventListener('change', (e) => { addFiles(id.startsWith('before') ? 'before' : 'after', [...e.target.files]); e.target.value = ''; });
+    }
+    for (const b of document.querySelectorAll('[data-clear]')) b.addEventListener('click', () => clearFiles(b.dataset.clear));
+    wireDrop($('drop-before'), 'before');
+    wireDrop($('drop-after'), 'after');
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+
+    $('reviewer').addEventListener('input', updateStart);
+    $('btn-start').addEventListener('click', startReview);
+    $('btn-reset').addEventListener('click', resetSession);
+    $('btn-combine').addEventListener('click', () => showScreen('results'));
+
+    for (const b of document.querySelectorAll('[data-mode]')) b.addEventListener('click', () => setMode(b.dataset.mode));
+    for (const b of document.querySelectorAll('[data-zoom]')) b.addEventListener('click', () => setZoom(b.dataset.zoom));
+    $('btn-prev').addEventListener('click', () => go(-1));
+    $('btn-next').addEventListener('click', () => go(1));
+    $('v-play').addEventListener('click', togglePlay);
+    $('v-back').addEventListener('click', () => stepFrame(-1));
+    $('v-fwd').addEventListener('click', () => stepFrame(1));
+    $('v-scrub').addEventListener('input', () => {
+      const v = state.view;
+      if (!v || v.kind !== 'video' || !v.a.duration) return;
+      const t = (Number($('v-scrub').value) / 1000) * v.a.duration;
+      v.a.currentTime = t; v.b.currentTime = t;
+    });
+
+    $('gate-back').addEventListener('click', () => showScreen('review'));
+    $('gate-show').addEventListener('click', () => { state.revealed = true; openResults(); });
+    $('btn-add-results').addEventListener('click', () => $('results-files').click());
+    $('results-files').addEventListener('change', (e) => { importResults([...e.target.files]); e.target.value = ''; });
+    $('btn-export-json').addEventListener('click', exportJson);
+    $('btn-export-csv').addEventListener('click', exportCsv);
+
+    new ResizeObserver(() => { if (!$('review').hidden && state.zoom === 'fit') sizeStages(); }).observe($('viewer'));
+
+    document.addEventListener('keydown', (e) => {
+      if ($('review').hidden || !state.session) return;
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      // Keys must not also "press" a focused button (Space would click Next again).
+      if (tag === 'BUTTON' && (k === ' ' || k === 'Enter')) e.target.blur();
+      if (k === 'Enter') return;
+      if (k >= '1' && k <= '5') { setOverall(OVERALL[Number(k) - 1].v); e.preventDefault(); return; }
+      switch (k) {
+        case 'ArrowLeft': go(-1); break;
+        case 'ArrowRight': go(1); break;
+        case 's': case 'S': setMode('side'); break;
+        case 'w': case 'W': setMode('wipe'); break;
+        case 'f': case 'F': setMode('flip'); break;
+        case 'z': case 'Z': cycleZoom(); break;
+        case 'k': case 'K': togglePlay(); break;
+        case ',': stepFrame(-1); break;
+        case '.': stepFrame(1); break;
+        case ' ':
+          if (state.mode === 'flip') toggleFlip(); else togglePlay();
+          break;
+        default: return;
+      }
+      e.preventDefault();
+    });
+    document.addEventListener('keyup', (e) => { if (!$('review').hidden && e.key === ' ' && e.target.tagName !== 'TEXTAREA') e.preventDefault(); });
+    $('v-scrub').addEventListener('change', () => $('v-scrub').blur());
+
+    renderSetup();
+  }
+
+  init();
+  // Hook for scripted testing of the page; not needed in normal use.
+  window.ABReview = { addFiles, importResults, state };
+})();
+</script>
+</body>
+</html>

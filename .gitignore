@@ -1,0 +1,27 @@
+# Converter output and test media: never commit renders or client images
+dlss5-test/
+*.exr
+*.tif
+*.tiff
+*.mp4
+*.mov
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.avif
+
+# NVIDIA runtimes (leaked or official) must never be committed
+nvngx*.dll
+sl.*.dll
+*.dll
+
+# Review results can contain artist comments about client work
+dlss5-review_*.json
+dlss5-review_*.csv
+
+# Python / OS
+__pycache__/
+*.pyc
+Thumbs.db
+desktop.ini
